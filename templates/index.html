@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Korean Photobooth</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,217;1,217&display=swap" rel="stylesheet">
+<head>
+<body>
+    <h1>Girlypop Photobooth</h1>
+    <video id="video" autoplay></video>
+    <canvas id="canvas"></canvas>
+    <canvas id="finalCanvas"></canvas>
+    <br>
+    <br>
+    <br>
+    <button id="capture-btn" onclick="startCaptureSequence()">📸 Click To Start</button>
+    <div class="button-container">
+        <button id="restart-btn" onclick="restartCapture()">Retake My Photos!</button>
+    </div>
+    
+    <br>    
+    <div id="timer"></div>
+    <div class="photo-strip-container">
+        <div class="photo-strip" id="photo-strip"></div>
+    </div>
+    <br>
+    <div id="captured-photo"></div>
+    <div class="button-container">
+        <button id="restart-btn" onclick="restartCapture()">Retake The Photos</button>
+    </div>
+    
+    <div class="button-container" id="filter-buttons" style="display: none;">
+        <button class="filter-btn" onclick="applyFilter('soft_pink')">Soft Pink</button>
+        <button class="filter-btn" onclick="applyFilter('light_blue')">Light Blue</button>
+        <button class="filter-btn" onclick="applyFilter('mint_green')">Mint Green</button>
+        <button class="filter-btn" onclick="applyFilter('warm_peach')">Warm Peach</button>
+        <button class="filter-btn" onclick="applyFilter('sticker_effect')">Add Stickers</button>
+    </div>
+
+    <div class="button-container">
+        <button id="download-btn" onclick="downloadStrip()">Download</button>
+    </div>
+    
+    
+    <div id="flash"></div>
+
+    <script>
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let finalCanvas = document.getElementById('finalCanvas');
+        let photoStrip = document.getElementById('photo-strip');
+        let captureBtn = document.getElementById('capture-btn');
+        let restartBtn = document.getElementById('restart-btn');
+        let timerDisplay = document.getElementById('timer');
+        let flash = document.getElementById('flash');
+        let downloadBtn = document.getElementById('download-btn');
+        let filterButtons = document.getElementById('filter-buttons');
+        let capturedImages = [];
+        let countdownTime = 3;
+        let selectedFilter = "soft_pink";
+
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => { video.srcObject = stream; })
+            .catch(err => { console.error("Error accessing webcam: ", err); });
+
+        function startCaptureSequence() {
+            captureBtn.style.display = 'none';
+            capturedImages = [];
+            captureImage(0);
+        }
+
+        function captureImage(count) {
+            if (count >= 4) {
+                video.style.display = 'none';
+                restartBtn.style.display = 'block';
+                sendImagesToServer();
+                return;
+            }
+            
+            timerDisplay.innerText = countdownTime;
+            let countdown = setInterval(() => {
+                countdownTime--;
+                timerDisplay.innerText = countdownTime;
+                if (countdownTime <= 0) {
+                    clearInterval(countdown);
+                    timerDisplay.innerText = "";
+                    flashEffect();
+                    takePhoto(count);
+                }
+            }, 1000);
+        }
+
+        function takePhoto(count) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            let ctx = canvas.getContext('2d');
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            let imageData = canvas.toDataURL('image/png');
+            
+            capturedImages.push(imageData);
+            countdownTime = 3;
+            setTimeout(() => captureImage(count + 1), 3000);
+        }
+
+        function flashEffect() {
+            flash.style.opacity = "1";
+            setTimeout(() => { flash.style.opacity = "0"; }, 200);
+        }
+
+        function sendImagesToServer() {
+            fetch('/capture_sequence', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ images: capturedImages, filter: selectedFilter })
+            })
+            .then(response => response.json())
+            .then(data => {
+                photoStrip.innerHTML = '';
+                data.images.forEach(img => {
+                    let imgElement = document.createElement('img');
+                    imgElement.src = img;
+                    photoStrip.appendChild(imgElement);
+                });
+                downloadBtn.style.display = 'block';
+                filterButtons.style.display = 'block';
+                document.querySelectorAll('.filter-btn').forEach(btn => btn.style.display = 'inline-block');
+            });
+        }
+
+        function downloadStrip() {
+            let finalStrip = document.createElement('canvas');
+            let ctx = finalStrip.getContext('2d');
+            let images = document.querySelectorAll('.photo-strip img');
+            finalStrip.width = images[0].naturalWidth;
+            finalStrip.height = images[0].naturalHeight * images.length;
+            
+            images.forEach((img, index) => {
+                ctx.drawImage(img, 0, index * img.naturalHeight, img.naturalWidth, img.naturalHeight);
+            });
+            
+            let link = document.createElement('a');
+            link.href = finalStrip.toDataURL('image/png');
+            link.download = 'korean_photobooth_strip.png';
+            link.click();
+        }
+
+        function applyFilter(filterType) {
+            selectedFilter = filterType;
+            sendImagesToServer();
+        }
+
+        function restartCapture() {
+            photoStrip.innerHTML = '';
+            restartBtn.style.display = 'none';
+            video.style.display = 'block';
+            captureBtn.style.display = 'block';
+            downloadBtn.style.display = 'none';
+            filterButtons.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
